@@ -87,6 +87,7 @@ CREATE TABLE campaigns (
     reach_cost            DOUBLE PRECISION NOT NULL DEFAULT 0.15,
     orders_per_converter  DOUBLE PRECISION NOT NULL DEFAULT 1.4,
     tail_factor           DOUBLE PRECISION NOT NULL DEFAULT 0.6,
+    cooldown_days         INTEGER NOT NULL DEFAULT 30,
     target_segments       JSON,
     note                  TEXT,
     operator_email        VARCHAR(160) NOT NULL,
@@ -112,10 +113,36 @@ CREATE TABLE audiences (
     operator_email  VARCHAR(160) NOT NULL,
     confirmed_by    VARCHAR(160),
     confirmed_at    TIMESTAMP,
+    scan_cursor     JSON,
+    lock_phase      VARCHAR(16) NOT NULL DEFAULT 'reserved',
+    attempt         INTEGER NOT NULL DEFAULT 0,
     seed_key        VARCHAR(120) UNIQUE,
     created_at      TIMESTAMP NOT NULL,
     updated_at      TIMESTAMP NOT NULL
 );
+
+-- 跨活动共享触达占用台账：同一会员只允许一行有效占用（reserved/confirmed）
+CREATE TABLE member_reach_locks (
+    id             SERIAL PRIMARY KEY,
+    member_id      INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    audience_id    INTEGER NOT NULL REFERENCES audiences(id) ON DELETE CASCADE,
+    campaign_id    INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+    segment_code   VARCHAR(20) NOT NULL DEFAULT '',
+    status         VARCHAR(16) NOT NULL DEFAULT 'reserved',
+    cooldown_until TIMESTAMP,
+    unit_cost      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    reserved_at    TIMESTAMP NOT NULL,
+    confirmed_at   TIMESTAMP,
+    released_at    TIMESTAMP,
+    created_at     TIMESTAMP NOT NULL,
+    updated_at     TIMESTAMP NOT NULL
+);
+CREATE UNIQUE INDEX ix_reach_lock_active_member
+    ON member_reach_locks (member_id)
+    WHERE status IN ('reserved', 'confirmed');
+CREATE INDEX ix_reach_lock_audience ON member_reach_locks (audience_id);
+CREATE INDEX ix_reach_lock_campaign ON member_reach_locks (campaign_id);
+CREATE INDEX ix_reach_lock_status_cooldown ON member_reach_locks (status, cooldown_until);
 
 CREATE TABLE audit_logs (
     id              SERIAL PRIMARY KEY,

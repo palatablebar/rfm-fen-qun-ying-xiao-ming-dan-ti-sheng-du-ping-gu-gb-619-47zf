@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Float, String, Text
+from sqlalchemy import JSON, Date, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models import Base
@@ -24,6 +24,8 @@ class Campaign(Base):
     reach_cost: Mapped[float] = mapped_column(Float, default=0.15)
     orders_per_converter: Mapped[float] = mapped_column(Float, default=1.4)
     tail_factor: Mapped[float] = mapped_column(Float, default=0.6)
+    # 跨活动共享触达：正式占用后的冷却期（天），冷却期内会员不被其它活动重复占用
+    cooldown_days: Mapped[int] = mapped_column(Integer, default=30)
     target_segments: Mapped[list] = mapped_column(JSON, default=list)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     operator_email: Mapped[str] = mapped_column(String(160), default="system")

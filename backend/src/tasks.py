@@ -46,10 +46,30 @@ def daily_refresh() -> dict:
             detail={"as_of": result["as_of"], "members": result["member_count"], "trigger": "schedule"},
             layer="worker",
         )
+        from src.models.audience import Audience
+
         campaigns = db.scalars(select(Campaign).where(Campaign.status == "active")).all()
         generated = 0
+        resumed = 0
         for campaign in campaigns:
             try:
+                pending = db.scalars(
+                    select(Audience)
+                    .where(Audience.campaign_id == campaign.id)
+                    .where(Audience.status == "pending")
+                    .order_by(Audience.id.desc())
+                ).all()
+                if pending:
+                    # 同一活动只保留一份待确认名单：在原名单上续跑补人，不新增、不重复占用
+                    for audience in pending:
+                        audience_service.resume_generation(
+                            db,
+                            audience,
+                            operator_email=f"scheduler@{settings.app_name}.io",
+                            note="每日定时重算续跑补人",
+                        )
+                        resumed += 1
+                    continue
                 audience_service.generate(
                     db,
                     campaign=campaign,
@@ -60,5 +80,10 @@ def daily_refresh() -> dict:
                 generated += 1
             except Exception as exc:  # noqa: BLE001 - 单个活动失败不影响其它
                 logger.warning("audience generate failed for %s: %s", campaign.code, exc)
-        logger.info("daily refresh: %s members, %s audiences", result["member_count"], generated)
-        return {"members": result["member_count"], "audiences": generated}
+        logger.info(
+            "daily refresh: %s members, %s new audiences, %s resumed",
+            result["member_count"],
+            generated,
+            resumed,
+        )
+        return {"members": result["member_count"], "audiences": generated, "resumed": resumed}

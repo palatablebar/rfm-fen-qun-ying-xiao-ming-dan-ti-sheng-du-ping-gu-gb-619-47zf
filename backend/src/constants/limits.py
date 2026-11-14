@@ -21,3 +21,12 @@ DEFAULT_ORDERS_PER_CONVERTER = 1.4   # 每个增量转化会员在活动窗口�
 DEFAULT_CORE_SHARE = 0.6             # 分群内「高响应核心盘」占比
 DEFAULT_TAIL_FACTOR = 0.6            # 超出核心盘部分的边际折减系数
 LIFT_ELIGIBLE_MIN = 1.0              # lift ≤ 1 不投放
+
+# ---- 跨活动共享触达占用 ----
+DEFAULT_REACH_COOLDOWN_DAYS = 30     # 会员确认触达后的默认冷却期（天），冷却期内不被其它活动重复占用
+MIN_REACH_COOLDOWN_DAYS = 0
+MAX_REACH_COOLDOWN_DAYS = 365
+# 预留占用（pending 名单）的保留时长：超时未确认自动释放，避免失败批次长期锁人
+RESERVATION_TTL_HOURS = 24
+# 预算浮点对账容差
+BUDGET_EPS = 1e-6

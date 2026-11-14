@@ -1,4 +1,8 @@
-"""CSV 导出：会员名单 / 分群表 / 名单明细（UTF-8 BOM）。"""
+"""CSV 导出：会员名单 / 分群表 / 名单明细（UTF-8 BOM）。
+
+名单明细严格按共享触达占用台账（member_reach_locks）的真实会员展开，
+与页面人数、预算逐行对账，不再按分群配额重新挑人（避免导出与实际占用不一致）。
+"""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -8,12 +12,14 @@ from src.constants.enums import (
     AUDIENCE_STATUS_LABELS,
     CAMPAIGN_STATUS_LABELS,
     MEMBER_TIER_LABELS,
+    REACH_LOCK_LABELS,
     SEGMENT_LABELS,
 )
 from src.constants.limits import MAX_EXPORT_ROWS
 from src.models.audience import Audience
 from src.models.campaign import Campaign
 from src.models.member import Member
+from src.models.reach_lock import ReachLock
 from src.models.segment import Segment
 from src.utils.csv_export import to_csv
 
@@ -80,41 +86,62 @@ def audience_csv(db: Session, audience_id: int | None = None) -> bytes:
     audiences = db.scalars(stmt).all()
     campaigns = {item.id: item for item in db.scalars(select(Campaign)).all()}
     headers = [
-        "名单号", "活动", "名单状态", "分群", "分群lift", "会员号", "姓名", "手机号", "城市",
-        "会员等级", "R分", "F分", "M分", "综合分", "历史券响应率", "该群分到人数", "该群预算",
-        "该群预计增量单量", "该群ROI",
+        "名单号", "活动", "名单状态", "占用状态", "分群", "分群lift", "会员号", "姓名", "手机号", "城市",
+        "会员等级", "R分", "F分", "M分", "综合分", "历史券响应率", "单人成本", "该群实际人数", "该群实际预算",
+        "该群预计增量单量", "该群ROI", "冷却截止",
     ]
     payload: list[list] = []
     for audience in audiences:
         campaign = campaigns.get(audience.campaign_id)
         campaign_name = campaign.name if campaign else ""
         status_label = AUDIENCE_STATUS_LABELS.get(audience.status, audience.status)
-        for row in audience.allocation or []:
-            if row.get("status") != "allocated" or not row.get("allocated"):
+        # 分群口径（来自名单快照分配）与真实占用按分群聚合
+        alloc_by_segment = {
+            row.get("segment_code"): row
+            for row in (audience.allocation or [])
+            if row.get("status") == "allocated"
+        }
+        locks = db.scalars(
+            select(ReachLock)
+            .where(ReachLock.audience_id == audience.id)
+            .where(ReachLock.status != "released")
+            .order_by(ReachLock.segment_code, ReachLock.id)
+        ).all()
+        member_ids = [lock.member_id for lock in locks]
+        members = {
+            item.id: item
+            for item in db.scalars(select(Member).where(Member.id.in_(member_ids))).all()
+        } if member_ids else {}
+        seg_actual: dict[str, dict[str, float]] = {}
+        for lock in locks:
+            bucket = seg_actual.setdefault(lock.segment_code, {"count": 0, "spend": 0.0})
+            bucket["count"] += 1
+            bucket["spend"] += lock.unit_cost or 0.0
+        for lock in locks:
+            member = members.get(lock.member_id)
+            if member is None:
                 continue
-            members = db.scalars(
-                select(Member)
-                .where(Member.segment_code == row["segment_code"])
-                .order_by(Member.composite_score.desc().nullslast(), Member.id)
-                .limit(int(row["allocated"]))
-            ).all()
-            for member in members:
-                payload.append(
-                    [
-                        audience.audience_no, campaign_name, status_label,
-                        SEGMENT_LABELS.get(row["segment_code"], row["segment_code"]),
-                        f"{row.get('lift', 0):.4f}",
-                        member.member_no, member.name, member.phone, member.city,
-                        MEMBER_TIER_LABELS.get(member.tier, member.tier),
-                        member.r_score, member.f_score, member.m_score,
-                        f"{member.composite_score or 0:.2f}",
-                        f"{(member.purchase_rate or 0) * 100:.2f}%",
-                        row.get("allocated", 0), f"{row.get('budget', 0):.2f}",
-                        row.get("inc_orders", 0), f"{row.get('roi', 0):.2f}",
-                    ]
-                )
-                if len(payload) >= MAX_EXPORT_ROWS:
-                    return to_csv(headers, payload)
+            row = alloc_by_segment.get(lock.segment_code, {})
+            actual = seg_actual.get(lock.segment_code, {"count": 0, "spend": 0.0})
+            payload.append(
+                [
+                    audience.audience_no, campaign_name, status_label,
+                    REACH_LOCK_LABELS.get(lock.status, lock.status),
+                    SEGMENT_LABELS.get(lock.segment_code, lock.segment_code),
+                    f"{row.get('lift', 0):.4f}",
+                    member.member_no, member.name, member.phone, member.city,
+                    MEMBER_TIER_LABELS.get(member.tier, member.tier),
+                    member.r_score, member.f_score, member.m_score,
+                    f"{member.composite_score or 0:.2f}",
+                    f"{(member.purchase_rate or 0) * 100:.2f}%",
+                    f"{lock.unit_cost or 0:.4f}",
+                    int(actual["count"]), f"{actual['spend']:.2f}",
+                    row.get("inc_orders", 0), f"{row.get('roi', 0):.2f}",
+                    lock.cooldown_until.strftime("%Y-%m-%d %H:%M") if lock.cooldown_until else "",
+                ]
+            )
+            if len(payload) >= MAX_EXPORT_ROWS:
+                return to_csv(headers, payload)
     return to_csv(headers, payload)
 
 

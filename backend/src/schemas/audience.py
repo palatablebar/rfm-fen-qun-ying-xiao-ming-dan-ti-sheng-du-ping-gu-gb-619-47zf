@@ -24,5 +24,11 @@ class AudienceReviewIn(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class AudienceResumeIn(BaseModel):
+    """确认失败释放后续跑补人（同一名单，不新增）。"""
+
+    note: str | None = Field(default=None, max_length=1000)
+
+
 class AllocationQuery(BaseModel):
     budget: float | None = Field(default=None, gt=0, le=5_000_000)

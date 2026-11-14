@@ -245,6 +245,7 @@ def ensure_campaigns(db) -> int:
                 "channel": spec["channel"],
                 "budget": spec["budget"],
                 "status": spec["status"],
+                "cooldown_days": spec.get("cooldown_days", 30),
                 "starts_on": spec["starts_on"],
                 "ends_on": spec["ends_on"],
                 "note": spec["note"],

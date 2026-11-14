@@ -9,6 +9,7 @@ ACTIONS: dict[str, str] = {
     "campaign.create": "新建活动",
     "campaign.update": "修改活动预算",
     "audience.generate": "生成营销名单",
+    "audience.resume": "续跑补人（共享占用）",
     "audience.confirm": "确认名单",
     "export.members": "导出会员名单",
     "export.segments": "导出分群表",

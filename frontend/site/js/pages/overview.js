@@ -84,6 +84,17 @@ export const overviewPage = {
         { label: '后台任务', value: data.worker_alive ? '在岗' : '心跳超时', hint: 'Celery 每日重算' },
       ])}
 
+      ${
+        data.reach_locks
+          ? statStrip([
+              { label: '预留占用（待确认）', value: fmtNum(data.reach_locks.reserved), hint: '生成名单先抢占，确认才转正' },
+              { label: '正式占用（已确认）', value: fmtNum(data.reach_locks.confirmed), hint: '跨活动去重，同一会员不重复占' },
+              { label: '冷却中会员', value: fmtNum(data.reach_locks.cooling), hint: '冷却期内不被其它活动重复占用' },
+              { label: '占用合计', value: fmtNum(data.reach_locks.reserved + data.reach_locks.confirmed), hint: '台账有效锁行数 = 实际占人' },
+            ])
+          : ''
+      }
+
       <section class="panel">
         <div class="panel-head">
           <h2>八类 RFM 分群</h2>

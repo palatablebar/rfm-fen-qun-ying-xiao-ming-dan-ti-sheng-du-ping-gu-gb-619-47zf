@@ -41,7 +41,7 @@
 | ① | 会员与订单接入 | 会员与订单 `#/members` | `member_service` / `member_controller` | `GET /api/members`、`GET /api/members/{id}`、`GET /api/orders` |
 | ② | RFM 评分（算法 A） | RFM 分群 `#/segments` | `rfm_service`、`segment_service` / `segment_controller` | `POST /api/segments/recompute`、`GET /api/segments` |
 | ③ | 分群规则与券口径 | RFM 分群 `#/segments` | `segment_service` / `segment_controller` | `PATCH /api/segments/{id}` |
-| ④ | 名单生成（算法 B 落库） | 名单与提升度 `#/audiences` | `audience_service` / `audience_controller` | `POST /api/audiences`、`GET /api/audiences`、`PATCH /api/audiences/{id}/review` |
+| ④ | 名单生成（算法 B 落库 + 算法 C 共享占用） | 名单与提升度 `#/audiences` | `audience_service`、`occupancy_service` / `audience_controller` | `POST /api/audiences`、`POST /api/audiences/{id}/resume`、`GET /api/audiences`、`PATCH /api/audiences/{id}/review` |
 | ⑤ | 提升度与预算分配（算法 B） | 名单与提升度 `#/audiences` | `lift_service`、`audience_service` / `campaign_controller` | `GET /api/campaigns`、`POST /api/campaigns`、`GET /api/campaigns/{id}/allocation` |
 | ⑥ | 导出与审计 | 导出与审计 `#/exports` | `export_service`、`audit_service` / `export_controller` | `GET /api/exports/{members,segments,audiences}.csv`、`GET /api/audit` |
 
@@ -142,6 +142,23 @@ docker-compose.yml  .env  README.md
 6. 增量：`Δp_s = p_s − p0`；增量人数 = `(核心盘人数 + 0.6 × 溢出人数) × Δp_s`；
    增量单量 = 增量人数 × `orders_per_converter`（默认 1.4）；增量 GMV = 增量单量 × 分群客单价（订单事实算出）。
 7. `ROI = 增量 GMV / 该群券预算`；整体 ROI = 总增量 GMV / 总花费。页面对每个分群展示这一整条推导。
+
+### 算法 C｜跨活动共享触达占用（`backend/src/services/occupancy_service.py` + `member_reach_locks`）
+
+两个活动同周末投放时，高价值会员不再被两份名单重复占用、重复算预算：
+
+1. **占用台账**：每个会员在任意时刻最多一行有效占用。`member_reach_locks` 用部分唯一索引
+   `WHERE status IN ('reserved','confirmed')` 在库内兜底「同一会员不重复占人」，`released` 历史行保留审计。
+2. **按优先级占用冷却期外的会员**：生成名单时沿用算法 B 的分群优先级，分群内按综合分降序、会员 id 升序
+   （与导出口径一致）逐个抢占；已被其它活动有效占用或处于冷却期（`cooldown_until` 未到）的会员跳过。
+3. **预留 → 一次性转正**：生成只写 `reserved` 预留占用（TTL 24h，超时自动释放）；点「确认/推送」时在单事务内
+   一次性把本名单全部预留切换为 `confirmed` 正式占用，并按活动 `cooldown_days`（默认 30 天）写冷却截止。
+4. **确认失败整批释放 + 断点续跑**：确认时若台账人数/花费与名单不一致，整批释放（独立事务提交，不被回滚撤销），
+   名单记录的 `scan_cursor` 归零；再点「生成/续跑补人」从已处理位置重新抢占补人，**同一名单号、不新增名单、
+   不重复占用**，`attempt` 记录轮次。同一活动对 pending 名单的重试一律走续跑，不会新建名单。
+5. **预算硬约束与对账一致**：逐人按 `unit_cost` 占用，再占一个会超预算即停止；预算下调续跑时先裁剪超额占用。
+   页面人数、预算、`/api/exports/audiences.csv` 导出明细全部回算自占用台账的真实锁行，
+   保证 `名单人数 == 有效锁行数 == 导出行数`，且 `花费 ≤ 预算`、活动间零重复会员。
 
 ### seed 数量口径（`SEED_SUMMARY`）
 

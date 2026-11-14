@@ -7,7 +7,7 @@ from src.config.database import get_db
 from src.constants.roles import AUDIENCE_CONFIRM_ROLES, AUDIENCE_GENERATE_ROLES
 from src.controllers import audience_controller
 from src.middlewares.rbac import READ_ROLES, require_roles
-from src.schemas.audience import AudienceIn, AudienceReviewIn
+from src.schemas.audience import AudienceIn, AudienceResumeIn, AudienceReviewIn
 from src.utils.pagination import page_params
 
 router = APIRouter(prefix="/audiences", tags=["audiences"])
@@ -45,6 +45,17 @@ def generate_audience(
     principal: dict = Depends(require_roles(*AUDIENCE_GENERATE_ROLES)),
 ) -> dict:
     return audience_controller.generate(db, payload.model_dump(), principal, request)
+
+
+@router.post("/{audience_id}/resume")
+def resume_audience(
+    audience_id: int,
+    payload: AudienceResumeIn,
+    request: Request,
+    db: Session = Depends(get_db),
+    principal: dict = Depends(require_roles(*AUDIENCE_GENERATE_ROLES)),
+) -> dict:
+    return audience_controller.resume(db, audience_id, payload.model_dump(), principal, request)
 
 
 @router.patch("/{audience_id}/review")

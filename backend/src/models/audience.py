@@ -29,6 +29,12 @@ class Audience(Base):
     operator_email: Mapped[str] = mapped_column(String(160), default="system")
     confirmed_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 续跑游标：{segment_code: 已扫描候选偏移量}，确认失败释放后从已处理位置续跑补人
+    scan_cursor: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 预留占用状态：reserved=占用未转正；committed=确认时已一次性转正（与 status 区分，供占用流程判定）
+    lock_phase: Mapped[str] = mapped_column(String(16), default="reserved", index=True)
+    # 续跑/重试轮次：同一活动重试不新增名单，只在原名单上累加
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
     seed_key: Mapped[str | None] = mapped_column(String(120), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

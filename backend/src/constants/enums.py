@@ -107,6 +107,21 @@ AUDIENCE_STATUS_ORDER: list[str] = [
 ]
 
 
+class ReachLockStatus(StrEnum):
+    """共享触达占用状态（member_reach_locks）。"""
+
+    RESERVED = "reserved"   # 待确认名单的预留占用（确认时一次性转正）
+    CONFIRMED = "confirmed"  # 已确认/已推送的正式占用，冷却期内对其它活动生效
+    RELEASED = "released"    # 确认失败/超时释放，会员可被后续活动重新占用
+
+
+REACH_LOCK_LABELS: dict[str, str] = {
+    ReachLockStatus.RESERVED.value: "预留占用",
+    ReachLockStatus.CONFIRMED.value: "正式占用",
+    ReachLockStatus.RELEASED.value: "已释放",
+}
+
+
 class OrderChannel(StrEnum):
     MINIAPP = "miniapp"
     STORE = "store"

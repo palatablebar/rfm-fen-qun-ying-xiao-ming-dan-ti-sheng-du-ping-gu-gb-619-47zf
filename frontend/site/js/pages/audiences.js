@@ -38,7 +38,7 @@ function allocationTable(allocation) {
   return `<div class="table-wrap"><table class="data allocation-table">
     <thead><tr>
       <th>优先级</th><th>分群</th><th>lift</th><th>券面额</th><th>人均成本</th><th>lift/成本</th>
-      <th>投放人数</th><th>券预算</th><th>预计增量</th><th>增量 GMV</th><th>ROI</th><th>状态</th>
+      <th>试算人数</th><th>券预算</th><th>预计增量</th><th>增量 GMV</th><th>ROI</th><th>状态</th>
     </tr></thead>
     <tbody>
       ${allocation.segments
@@ -62,7 +62,10 @@ function allocationTable(allocation) {
         )
         .join('')}
     </tbody>
-  </table></div>`;
+  </table>
+  <div class="note" style="margin-top:8px">试算为预算规划口径；点「生成名单」后按优先级在共享占用台账抢占冷却期外的真实会员，
+    实际占用人数 / 预算 / 导出明细以台账为准，活动间不重复占人、不超预算。</div>
+  </div>`;
 }
 
 function historyTable(audiences) {
@@ -71,8 +74,20 @@ function historyTable(audiences) {
     columns: [
       { key: 'audience_no', label: '名单号', className: 'mono' },
       { key: 'campaign_name', label: '活动' },
-      { key: 'status', label: '状态', render: (row) => badge(audienceTone(row.status), row.status_label) },
-      { key: 'member_count', label: '人数', className: 'num', render: (row) => fmtNum(row.member_count) },
+      {
+        key: 'status',
+        label: '状态',
+        render: (row) => `${badge(audienceTone(row.status), row.status_label)}
+          <div class="mini">${esc(ENUMS.lockPhase[row.lock_phase] || row.lock_phase || '预留占用')}${row.attempt > 1 ? ` · 第 ${fmtNum(row.attempt)} 轮` : ''}</div>`,
+      },
+      {
+        key: 'member_count',
+        label: '人数',
+        className: 'num',
+        render: (row) => `${fmtNum(row.member_count)}${row.locked_members != null && row.locked_members !== row.member_count
+          ? `<div class="mini" style="color:var(--danger,#c0392b)">占用 ${fmtNum(row.locked_members)}</div>`
+          : ''}`,
+      },
       { key: 'budget', label: '预算', className: 'num', render: (row) => fmtMoney(row.budget) },
       { key: 'spend', label: '实花', className: 'num', render: (row) => fmtMoney(row.spend) },
       { key: 'inc_orders', label: '预计增量', className: 'num', render: (row) => fmtNum(row.inc_orders) },
@@ -86,36 +101,42 @@ function historyTable(audiences) {
 function openAudience(view, ctx, audience, campaigns) {
   const rows = audience.allocation || [];
   const canConfirm = can(ctx.user.role, 'audience:confirm');
+  const canGenerate = can(ctx.user.role, 'audience:generate');
+  const isPending = audience.status === 'pending';
   const { root, close } = drawer({
     title: `名单 ${audience.audience_no}`,
-    subtitle: `${audience.campaign_name || ''} · ${audience.status_label}`,
+    subtitle: `${audience.campaign_name || ''} · ${audience.status_label} · ${esc(ENUMS.lockPhase[audience.lock_phase] || audience.lock_phase || '预留占用')}`,
     body: `${kv([
       ['活动', esc(audience.campaign_name || '—')],
-      ['名单人数', fmtNum(audience.member_count)],
-      ['预算 / 实花', `${fmtMoney(audience.budget)} / ${fmtMoney(audience.spend)}`],
+      ['名单人数', `${fmtNum(audience.member_count)} 人（占用台账 ${fmtNum(audience.locked_members ?? audience.member_count)} 人，逐行一致）`],
+      ['预算 / 实花', `${fmtMoney(audience.budget)} / ${fmtMoney(audience.spend)}（不超预算）`],
       ['预计增量单量', fmtNum(audience.inc_orders)],
       ['增量 GMV', fmtMoney(audience.inc_gmv)],
       ['整体 ROI', `<b>${Number(audience.roi).toFixed(2)}</b>`],
       ['大盘购买率', fmtPct(audience.global_rate)],
+      ['占用轮次', `第 ${fmtNum(audience.attempt || 1)} 轮（同活动重试不新增名单、不重复占人）`],
       ['生成人 / 时间', `${esc(audience.operator_email)} · ${esc((audience.created_at || '').slice(0, 16).replace('T', ' '))}`],
       ['确认人', esc(audience.confirmed_by || '—')],
     ])}
-    <h3 style="margin:14px 0 6px;font-size:0.95rem">分群预算分配</h3>
+    <h3 style="margin:14px 0 6px;font-size:0.95rem">分群预算分配（实际占用口径）</h3>
     <div class="table-wrap"><table class="data" style="min-width:0">
-      <thead><tr><th>分群</th><th>lift</th><th>人数</th><th>预算</th><th>增量</th><th>ROI</th></tr></thead>
+      <thead><tr><th>分群</th><th>lift</th><th>实际占用</th><th>被挡/差额</th><th>预算</th><th>增量</th><th>ROI</th></tr></thead>
       <tbody>${rows
         .filter((row) => row.status === 'allocated')
         .map(
           (row) => `<tr><td>${esc(row.segment_name)}</td><td class="mono">${fmtLift(row.lift)}</td>
-            <td class="num">${fmtNum(row.allocated)}</td><td class="num">${fmtMoney(row.budget)}</td>
+            <td class="num">${fmtNum(row.occupied_members ?? row.allocated)}</td>
+            <td class="num">${fmtNum(row.blocked_members ?? 0)}</td>
+            <td class="num">${fmtMoney(row.budget)}</td>
             <td class="num">${fmtNum(row.inc_orders)}</td><td class="num">${Number(row.roi).toFixed(2)}</td></tr>`,
         )
         .join('')}</tbody></table></div>
     <div class="note" style="margin-top:10px">${esc(audience.note || '')}</div>`,
-    footer: canConfirm
+    footer: canConfirm || canGenerate
       ? `<div class="rule-chipline">
-          <button class="btn accent" data-confirm="confirmed">确认名单</button>
-          <button class="btn ghost" data-confirm="pushed">标记已推送券平台</button>
+          ${canConfirm && isPending ? '<button class="btn accent" data-confirm="confirmed">确认名单（占用转正）</button>' : ''}
+          ${canConfirm && isPending ? '<button class="btn ghost" data-confirm="pushed">标记已推送券平台</button>' : ''}
+          ${canGenerate && isPending ? '<button class="btn ghost" data-resume>续跑补人</button>' : ''}
           <button class="btn sm ghost" data-download>导出名单明细</button>
         </div>`
       : '<span class="mono muted">只读角色可以查看名单，但不能确认或导出</span>',
@@ -125,7 +146,7 @@ function openAudience(view, ctx, audience, campaigns) {
     node.addEventListener('click', async () => {
       try {
         await api.patch(`/api/audiences/${audience.id}/review`, { status: node.dataset.confirm });
-        toast('名单状态已更新');
+        toast('名单状态已更新，占用已一次性转为正式名单');
         close();
         await audiencesPage.render(view, ctx);
       } catch (err) {
@@ -133,10 +154,20 @@ function openAudience(view, ctx, audience, campaigns) {
       }
     });
   });
+  root.querySelector('[data-resume]')?.addEventListener('click', async () => {
+    try {
+      const updated = await api.post(`/api/audiences/${audience.id}/resume`, {});
+      toast(`续跑完成：${updated.audience_no} 实际占用 ${fmtNum(updated.member_count)} 人`);
+      close();
+      await audiencesPage.render(view, ctx);
+    } catch (err) {
+      toast(errorMessage(err), 'err');
+    }
+  });
   root.querySelector('[data-download]')?.addEventListener('click', async () => {
     try {
       await api.download(`/api/exports/audiences.csv?audience_id=${audience.id}`, `${audience.audience_no}.csv`);
-      toast('已开始下载名单明细');
+      toast('已开始下载名单明细（与占用台账一致）');
     } catch (err) {
       toast(errorMessage(err), 'err');
     }
@@ -249,13 +280,16 @@ export const audiencesPage = {
     view.querySelector('#generate')?.addEventListener('click', async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = '生成中…';
+      button.textContent = '占用中…';
       try {
         const audience = await api.post('/api/audiences', {
           campaign_id: Number(state.campaignId),
           budget: Number(budgetField.value || campaign.budget),
         });
-        toast(`名单 ${audience.audience_no} 已生成：${audience.member_count} 人，ROI ${Number(audience.roi).toFixed(2)}`);
+        const resumed = audience.attempt > 1;
+        toast(
+          `${resumed ? '续跑' : '名单'} ${audience.audience_no}：实际占用 ${audience.member_count} 人，花费 ${fmtMoney(audience.spend)}，ROI ${Number(audience.roi).toFixed(2)}`,
+        );
         state.budget = '';
         await audiencesPage.render(view, ctx);
       } catch (err) {

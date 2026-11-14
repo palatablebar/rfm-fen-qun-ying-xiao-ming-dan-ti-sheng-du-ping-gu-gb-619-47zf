@@ -92,6 +92,11 @@ def overview(db: Session) -> dict:
         select(func.count()).select_from(Order).where(Order.paid_at >= utcnow() - timedelta(days=30))
     ) or 0
 
+    # 共享触达占用：跨活动去重后的预留/正式/冷却中人数
+    from src.services import occupancy_service
+
+    reach_locks = occupancy_service.active_lock_counts(db)
+
     return {
         "members_total": members_total,
         "orders_total": orders_total,
@@ -135,4 +140,5 @@ def overview(db: Session) -> dict:
         "as_of": as_of,
         "trend": trend,
         "worker_alive": worker_alive(),
+        "reach_locks": reach_locks,
     }

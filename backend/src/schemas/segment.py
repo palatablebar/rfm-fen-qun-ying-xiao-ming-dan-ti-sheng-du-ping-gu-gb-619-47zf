@@ -49,6 +49,7 @@ class CampaignIn(BaseModel):
     budget: float = Field(gt=0, le=5_000_000)
     channel: str = Field(default="小程序订阅消息", max_length=20)
     status: Literal["draft", "active", "closed"] = "draft"
+    cooldown_days: int = Field(default=30, ge=0, le=365)
     starts_on: str | None = Field(default=None, max_length=10)
     ends_on: str | None = Field(default=None, max_length=10)
     note: str | None = Field(default=None, max_length=1000)

@@ -96,6 +96,10 @@ export const ENUMS = {
     confirmed: '已确认',
     pushed: '已推送券平台',
   },
+  lockPhase: {
+    reserved: '预留占用',
+    committed: '正式占用',
+  },
   allocationStatus: {
     allocated: '已分配',
     deferred: '预算不足',
